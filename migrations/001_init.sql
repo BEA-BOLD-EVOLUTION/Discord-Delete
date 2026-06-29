@@ -9,11 +9,20 @@ CREATE TABLE IF NOT EXISTS channel_rules (
     mode              TEXT        NOT NULL CHECK (mode IN ('archive_delete', 'delete')),
     skip_pinned       BOOLEAN     NOT NULL DEFAULT TRUE,
     enabled           BOOLEAN     NOT NULL DEFAULT TRUE,
+    -- How often this channel's cleanup runs, and when it last ran.
+    run_every_seconds BIGINT      NOT NULL DEFAULT 86400 CHECK (run_every_seconds > 0),
+    last_run_at       TIMESTAMPTZ,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_channel_rules_guild ON channel_rules (guild_id);
+
+-- Upgrade existing deployments that predate the per-channel cadence columns.
+ALTER TABLE channel_rules
+    ADD COLUMN IF NOT EXISTS run_every_seconds BIGINT NOT NULL DEFAULT 86400;
+ALTER TABLE channel_rules
+    ADD COLUMN IF NOT EXISTS last_run_at TIMESTAMPTZ;
 
 -- Saved copies of messages archived before deletion.
 CREATE TABLE IF NOT EXISTS archived_messages (

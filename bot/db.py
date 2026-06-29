@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
 from dataclasses import dataclass
@@ -24,6 +25,8 @@ class ChannelRule:
     mode: str
     skip_pinned: bool
     enabled: bool
+    run_every_seconds: int
+    last_run_at: dt.datetime | None
 
     @classmethod
     def from_row(cls, row: asyncpg.Record) -> "ChannelRule":
@@ -34,7 +37,20 @@ class ChannelRule:
             mode=row["mode"],
             skip_pinned=row["skip_pinned"],
             enabled=row["enabled"],
+            run_every_seconds=row["run_every_seconds"],
+            last_run_at=row["last_run_at"],
         )
+
+    def is_due(self, now: dt.datetime) -> bool:
+        """Whether this channel's cleanup should run at ``now``.
+
+        A rule that has never run is always due; otherwise it is due once at
+        least ``run_every_seconds`` have elapsed since the last run.
+        """
+        if self.last_run_at is None:
+            return True
+        elapsed = (now - self.last_run_at).total_seconds()
+        return elapsed >= self.run_every_seconds
 
 
 class Database:
@@ -69,27 +85,40 @@ class Database:
         max_age_seconds: int,
         mode: str,
         skip_pinned: bool,
+        run_every_seconds: int,
     ) -> None:
         if mode not in VALID_MODES:
             raise ValueError(f"Invalid mode: {mode!r}")
+        # Note: last_run_at is intentionally left untouched on conflict so that
+        # editing a rule does not reset its cleanup cadence.
         await self.pool.execute(
             """
             INSERT INTO channel_rules
-                (guild_id, channel_id, max_age_seconds, mode, skip_pinned, enabled, updated_at)
-            VALUES ($1, $2, $3, $4, $5, TRUE, now())
+                (guild_id, channel_id, max_age_seconds, mode, skip_pinned,
+                 run_every_seconds, enabled, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, TRUE, now())
             ON CONFLICT (channel_id) DO UPDATE SET
-                guild_id        = EXCLUDED.guild_id,
-                max_age_seconds = EXCLUDED.max_age_seconds,
-                mode            = EXCLUDED.mode,
-                skip_pinned     = EXCLUDED.skip_pinned,
-                enabled         = TRUE,
-                updated_at      = now()
+                guild_id          = EXCLUDED.guild_id,
+                max_age_seconds   = EXCLUDED.max_age_seconds,
+                mode              = EXCLUDED.mode,
+                skip_pinned       = EXCLUDED.skip_pinned,
+                run_every_seconds = EXCLUDED.run_every_seconds,
+                enabled           = TRUE,
+                updated_at        = now()
             """,
             guild_id,
             channel_id,
             max_age_seconds,
             mode,
             skip_pinned,
+            run_every_seconds,
+        )
+
+    async def mark_rule_ran(self, channel_id: int) -> None:
+        """Record that a channel's cleanup just ran (resets its cadence clock)."""
+        await self.pool.execute(
+            "UPDATE channel_rules SET last_run_at = now() WHERE channel_id = $1",
+            channel_id,
         )
 
     async def disable_rule(self, channel_id: int) -> bool:

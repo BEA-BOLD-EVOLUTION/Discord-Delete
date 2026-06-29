@@ -59,17 +59,20 @@ class SweeperCog(commands.Cog):
     @tasks.loop(minutes=60)
     async def sweep_loop(self) -> None:
         rules = await self.db.list_all_enabled_rules()
-        if not rules:
+        # Only sweep channels whose per-channel cadence (run_every) is due.
+        now = dt.datetime.now(dt.timezone.utc)
+        due = [rule for rule in rules if rule.is_due(now)]
+        if not due:
             return
 
         # Group by guild so one guild's failure is isolated from the others.
         by_guild: dict[int, list[ChannelRule]] = defaultdict(list)
-        for rule in rules:
+        for rule in due:
             by_guild[rule.guild_id].append(rule)
 
         log.info(
-            "Scheduled sweep starting: %d channel(s) across %d guild(s).",
-            len(rules),
+            "Scheduled sweep starting: %d due channel(s) across %d guild(s).",
+            len(due),
             len(by_guild),
         )
         grand_total = SweepResult()
@@ -78,6 +81,8 @@ class SweeperCog(commands.Cog):
             try:
                 for rule in guild_rules:
                     guild_total.add(await self._run_sweep(rule))
+                    # Record the run so the cadence clock resets for this channel.
+                    await self.db.mark_rule_ran(rule.channel_id)
             except Exception:  # noqa: BLE001 - never let one guild break the loop
                 log.exception("Unexpected error sweeping guild %d.", guild_id)
                 guild_total.errors += 1
@@ -241,6 +246,8 @@ class SweeperCog(commands.Cog):
         total = SweepResult()
         for rule in rules:
             total.add(await self._run_sweep(rule))
+            # A manual run also resets the channel's cadence clock.
+            await self.db.mark_rule_ran(rule.channel_id)
 
         summary = (
             f"🧹 Sweep complete across **{len(rules)}** channel(s):\n"

@@ -38,6 +38,7 @@ class ConfigCog(commands.Cog):
         channel="The channel to manage.",
         max_age="How old a message must be before it ages out (e.g. 30d, 12h, 45m).",
         mode="What to do with aged messages.",
+        run_every="How often cleanup runs for this channel (e.g. 1d, 3d, 12h). Default 1d.",
         skip_pinned="Skip pinned messages (default: yes).",
     )
     @app_commands.choices(
@@ -53,12 +54,22 @@ class ConfigCog(commands.Cog):
         channel: discord.TextChannel,
         max_age: str,
         mode: app_commands.Choice[str],
+        run_every: str = "1d",
         skip_pinned: bool = True,
     ) -> None:
         try:
             seconds = parse_duration(max_age)
         except DurationError as exc:
-            await interaction.response.send_message(f"⚠️ {exc}", ephemeral=True)
+            await interaction.response.send_message(
+                f"⚠️ Invalid `max_age`: {exc}", ephemeral=True
+            )
+            return
+        try:
+            run_every_seconds = parse_duration(run_every)
+        except DurationError as exc:
+            await interaction.response.send_message(
+                f"⚠️ Invalid `run_every`: {exc}", ephemeral=True
+            )
             return
 
         await self.db.upsert_rule(
@@ -67,10 +78,12 @@ class ConfigCog(commands.Cog):
             max_age_seconds=seconds,
             mode=mode.value,
             skip_pinned=skip_pinned,
+            run_every_seconds=run_every_seconds,
         )
         await interaction.response.send_message(
             f"✅ {channel.mention} will age out messages older than "
-            f"**{humanize_duration(seconds)}** — **{MODE_LABELS[mode.value]}**"
+            f"**{humanize_duration(seconds)}** — **{MODE_LABELS[mode.value]}**, "
+            f"running every **{humanize_duration(run_every_seconds)}**"
             f"{' (skipping pinned)' if skip_pinned else ''}.",
             ephemeral=True,
         )
@@ -110,8 +123,17 @@ class ConfigCog(commands.Cog):
         )
         embed.add_field(name="Max age", value=humanize_duration(rule.max_age_seconds))
         embed.add_field(name="Mode", value=MODE_LABELS.get(rule.mode, rule.mode))
+        embed.add_field(
+            name="Runs every", value=humanize_duration(rule.run_every_seconds)
+        )
         embed.add_field(name="Skip pinned", value="Yes" if rule.skip_pinned else "No")
         embed.add_field(name="Enabled", value="Yes" if rule.enabled else "No")
+        last_run = (
+            discord.utils.format_dt(rule.last_run_at, style="R")
+            if rule.last_run_at
+            else "Never"
+        )
+        embed.add_field(name="Last run", value=last_run)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @aging.command(name="list", description="List all aging rules in this server.")
@@ -133,7 +155,8 @@ class ConfigCog(commands.Cog):
                 name=f"{status} <#{rule.channel_id}>",
                 value=(
                     f"{humanize_duration(rule.max_age_seconds)} · "
-                    f"{MODE_LABELS.get(rule.mode, rule.mode)}"
+                    f"{MODE_LABELS.get(rule.mode, rule.mode)} · "
+                    f"every {humanize_duration(rule.run_every_seconds)}"
                     f"{' · skip pinned' if rule.skip_pinned else ''}"
                 ),
                 inline=False,

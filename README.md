@@ -23,7 +23,7 @@ All commands require the **Manage Messages** permission.
 
 | Command | Description |
 | --- | --- |
-| `/aging set channel:<#channel> max_age:<duration> mode:<archive_delete\|delete> [skip_pinned:<bool>]` | Create or update a channel's rule. |
+| `/aging set channel:<#channel> max_age:<duration> mode:<archive_delete\|delete> [run_every:<duration>] [skip_pinned:<bool>]` | Create or update a channel's rule. |
 | `/aging disable channel:<#channel>` | Stop aging a channel (keeps its archive). |
 | `/aging status [channel:<#channel>]` | Show a channel's current rule. |
 | `/aging list` | List all rules in the server. |
@@ -31,6 +31,22 @@ All commands require the **Manage Messages** permission.
 
 **Durations** accept compact forms: `30d`, `12h`, `45m`, `90s`, `2w`, or
 combinations like `1d12h`. A bare number is seconds.
+
+### Per-channel schedule
+
+Each channel has two independent settings:
+
+- **`max_age`** — how old a message must be before it qualifies for cleanup.
+- **`run_every`** — how often that channel's cleanup actually runs (default
+  **`1d`**). Set it to `3d`, `12h`, `1w`, etc. per channel.
+
+The bot wakes up every `SWEEP_INTERVAL_MINUTES` (the global "tick", default 60),
+but a given channel is only swept once its own `run_every` has elapsed since its
+last run — so `run_every` is effectively rounded up to the tick. Running `/sweep`
+manually processes the channel immediately and resets its cadence clock.
+
+Example — clear messages older than 7 days, but only run the pass once a day:
+`/aging set channel:#general max_age:7d mode:delete run_every:1d`
 
 ## Multi-server (public bot)
 
