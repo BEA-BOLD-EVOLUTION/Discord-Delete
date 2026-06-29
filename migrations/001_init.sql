@@ -45,3 +45,20 @@ CREATE INDEX IF NOT EXISTS idx_archived_channel_time
 -- Supports the retention purge (delete rows older than N days).
 CREATE INDEX IF NOT EXISTS idx_archived_archived_at
     ON archived_messages (archived_at);
+
+-- Audit log of every bulk deletion performed by the bot.
+CREATE TABLE IF NOT EXISTS deletion_logs (
+    id             SERIAL      PRIMARY KEY,
+    guild_id       TEXT        NOT NULL,
+    channel_id     TEXT        NOT NULL,
+    user_id        TEXT        NOT NULL,
+    user_name      TEXT        NOT NULL,
+    message_count  INT         NOT NULL,
+    deletion_type  TEXT        NOT NULL CHECK (deletion_type IN ('manual', 'scheduled')),
+    criteria       TEXT,
+    reason         TEXT,
+    deleted_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_deletion_logs_guild_time
+    ON deletion_logs (guild_id, deleted_at DESC);

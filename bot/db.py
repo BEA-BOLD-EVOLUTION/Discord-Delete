@@ -212,3 +212,59 @@ class Database:
             retention_days,
         )
         return int(result.split()[-1]) if result else 0
+
+    # -- deletion_logs ----------------------------------------------------
+
+    async def log_deletion(
+        self,
+        *,
+        guild_id: int,
+        channel_id: int,
+        user_id: int,
+        user_name: str,
+        message_count: int,
+        deletion_type: str,
+        criteria: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        """Insert one deletion audit record.
+
+        ``deletion_type`` must be ``'manual'`` or ``'scheduled'``.
+        """
+        await self.pool.execute(
+            """
+            INSERT INTO deletion_logs
+                (guild_id, channel_id, user_id, user_name, message_count,
+                 deletion_type, criteria, reason)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            """,
+            str(guild_id),
+            str(channel_id),
+            str(user_id),
+            user_name,
+            message_count,
+            deletion_type,
+            criteria,
+            reason,
+        )
+
+    async def list_deletion_logs(
+        self, guild_id: int, *, limit: int = 10
+    ) -> list[asyncpg.Record]:
+        """Return the most recent deletion log entries for a guild.
+
+        ``limit`` is clamped to [1, 50].
+        """
+        limit = max(1, min(limit, 50))
+        return await self.pool.fetch(
+            """
+            SELECT id, channel_id, user_id, user_name, message_count,
+                   deletion_type, criteria, reason, deleted_at
+            FROM deletion_logs
+            WHERE guild_id = $1
+            ORDER BY deleted_at DESC
+            LIMIT $2
+            """,
+            str(guild_id),
+            limit,
+        )

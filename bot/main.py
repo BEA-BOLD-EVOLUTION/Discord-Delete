@@ -16,6 +16,7 @@ log = logging.getLogger(__name__)
 COGS = (
     "bot.cogs.config_cog",
     "bot.cogs.sweeper_cog",
+    "bot.cogs.logs_cog",
 )
 
 
