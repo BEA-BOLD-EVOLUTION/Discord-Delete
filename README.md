@@ -82,7 +82,10 @@ archive bounded and applies uniformly to every server.
 
 1. Create an application at <https://discord.com/developers/applications>.
 2. Under **Bot**, enable the **Message Content Intent** (required to read and
-   archive message bodies). Copy the bot token.
+   archive message bodies). Copy the bot token. If you only use `delete` mode and
+   don't want this privileged intent, set `ENABLE_MESSAGE_CONTENT=false` instead
+   (archived text will then be empty). Without either, the bot exits on startup
+   with a clear message telling you to enable the intent.
 3. Invite the bot with the **`bot`** and **`applications.commands`** scopes and
    the **Manage Messages** + **Read Message History** permissions
    (`8192 + 65536 = 73728`). Ready-made invite link for this application:
@@ -101,6 +104,7 @@ Copy `.env.example` to `.env` and fill in:
 | `DATABASE_URL` | ✅ | — | e.g. `postgresql://user:pass@host:5432/discorddelete`. |
 | `SWEEP_INTERVAL_MINUTES` | | `60` | How often the automatic sweep runs. |
 | `ARCHIVE_RETENTION_DAYS` | | `90` | Archived messages older than this are purged daily. |
+| `ENABLE_MESSAGE_CONTENT` | | `true` | Request the Message Content Intent (needed to archive text). Set `false` for delete-only mode without the privileged intent. |
 | `DEV_GUILD_ID` | | — | Sync commands to one guild instantly during dev. Leave blank for global sync. |
 
 ## Running

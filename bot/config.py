@@ -21,6 +21,7 @@ class Config:
     database_url: str
     sweep_interval_minutes: int
     archive_retention_days: int
+    enable_message_content: bool
     dev_guild_id: int | None
 
     @classmethod
@@ -63,6 +64,9 @@ class Config:
         if retention < 1:
             raise ConfigError("ARCHIVE_RETENTION_DAYS must be at least 1.")
 
+        content_raw = os.getenv("ENABLE_MESSAGE_CONTENT", "true").strip().lower()
+        enable_message_content = content_raw not in ("false", "0", "no", "off")
+
         dev_guild_raw = os.getenv("DEV_GUILD_ID", "").strip()
         dev_guild_id: int | None
         if dev_guild_raw:
@@ -80,5 +84,6 @@ class Config:
             database_url=database_url,
             sweep_interval_minutes=interval,
             archive_retention_days=retention,
+            enable_message_content=enable_message_content,
             dev_guild_id=dev_guild_id,
         )

@@ -17,7 +17,20 @@ def test_defaults(base_env):
     assert cfg.discord_token == "token"
     assert cfg.sweep_interval_minutes == 60
     assert cfg.archive_retention_days == 90
+    assert cfg.enable_message_content is True
     assert cfg.dev_guild_id is None
+
+
+@pytest.mark.parametrize("value", ["false", "False", "0", "no", "off"])
+def test_message_content_can_be_disabled(base_env, monkeypatch, value):
+    monkeypatch.setenv("ENABLE_MESSAGE_CONTENT", value)
+    assert Config.from_env().enable_message_content is False
+
+
+@pytest.mark.parametrize("value", ["true", "1", "yes", "anything-else"])
+def test_message_content_enabled_for_truthy(base_env, monkeypatch, value):
+    monkeypatch.setenv("ENABLE_MESSAGE_CONTENT", value)
+    assert Config.from_env().enable_message_content is True
 
 
 def test_localhost_url_is_accepted(base_env, monkeypatch):
