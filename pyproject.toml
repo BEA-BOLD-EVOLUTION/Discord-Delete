@@ -1,0 +1,11 @@
+[project]
+name = "discord-delete"
+version = "0.1.0"
+description = "A Discord bot that ages out channel messages by archiving and/or deleting them."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+# Make the `bot` package importable without installation.
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
