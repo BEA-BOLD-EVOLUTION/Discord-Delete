@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -31,6 +32,16 @@ class Config:
         database_url = os.getenv("DATABASE_URL", "").strip()
         if not database_url:
             raise ConfigError("DATABASE_URL is required (set it in your .env).")
+        # A DATABASE_URL with no host means asyncpg silently falls back to
+        # localhost:5432. On Railway this is the signature of a broken
+        # `${{Postgres.DATABASE_URL}}` reference (the Postgres service isn't
+        # linked), so fail fast with an actionable message instead.
+        if urlparse(database_url).hostname is None:
+            raise ConfigError(
+                "DATABASE_URL has no host. On Railway, add a PostgreSQL service "
+                "and set DATABASE_URL to reference it, e.g. "
+                "DATABASE_URL=${{Postgres.DATABASE_URL}}."
+            )
 
         interval_raw = os.getenv("SWEEP_INTERVAL_MINUTES", "60").strip() or "60"
         try:
