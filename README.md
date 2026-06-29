@@ -32,6 +32,30 @@ All commands require the **Manage Messages** permission.
 **Durations** accept compact forms: `30d`, `12h`, `45m`, `90s`, `2w`, or
 combinations like `1d12h`. A bare number is seconds.
 
+## Multi-server (public bot)
+
+The bot is built to run across **many servers at once, fully isolated**:
+
+- Every rule and archived message is tagged with its `guild_id`, and Discord
+  channel/message IDs are globally unique — so one server can never see or affect
+  another's configuration or data.
+- Commands are **synced globally**, so they appear automatically in every server
+  the bot joins (the first global sync can take up to ~1 hour to propagate;
+  use `DEV_GUILD_ID` for instant availability while developing).
+- When the bot is **removed from a server**, that server's rules are deleted
+  automatically; its already-archived messages are retained (and still age out
+  under the retention policy below). Deleting a channel removes its rule too.
+
+> **One caveat:** a single bot token shares **one** global Discord rate-limit
+> pool. Extremely heavy deletion in one server can briefly slow sweeps in others.
+> This affects timing only — never data isolation.
+
+## Archive retention
+
+Archived messages are kept for at most **`ARCHIVE_RETENTION_DAYS`** (default
+**90**) days. A daily background job deletes anything older. This keeps the
+archive bounded and applies uniformly to every server.
+
 ## Requirements
 
 - Python 3.10+
@@ -44,12 +68,12 @@ combinations like `1d12h`. A bare number is seconds.
 2. Under **Bot**, enable the **Message Content Intent** (required to read and
    archive message bodies). Copy the bot token.
 3. Invite the bot with the **`bot`** and **`applications.commands`** scopes and
-   the **Manage Messages** + **Read Message History** permissions. A ready-made
-   invite URL looks like:
+   the **Manage Messages** + **Read Message History** permissions
+   (`8192 + 65536 = 73728`). Ready-made invite link for this application:
    ```
-   https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot%20applications.commands&permissions=8192
+   https://discord.com/api/oauth2/authorize?client_id=1491207826477940877&scope=bot%20applications.commands&permissions=73728
    ```
-   (`8192` = Manage Messages; add `65536` for Read Message History → `73728`.)
+   (Replace the `client_id` if you deploy under a different application.)
 
 ## Configuration
 
@@ -60,6 +84,7 @@ Copy `.env.example` to `.env` and fill in:
 | `DISCORD_TOKEN` | ✅ | — | Bot token. |
 | `DATABASE_URL` | ✅ | — | e.g. `postgresql://user:pass@host:5432/discorddelete`. |
 | `SWEEP_INTERVAL_MINUTES` | | `60` | How often the automatic sweep runs. |
+| `ARCHIVE_RETENTION_DAYS` | | `90` | Archived messages older than this are purged daily. |
 | `DEV_GUILD_ID` | | — | Sync commands to one guild instantly during dev. Leave blank for global sync. |
 
 ## Running

@@ -27,6 +27,7 @@ class AgingBot(commands.Bot):
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.config = config
         self.sweep_interval_minutes = config.sweep_interval_minutes
+        self.archive_retention_days = config.archive_retention_days
         self.db: Database | None = None
 
     async def setup_hook(self) -> None:

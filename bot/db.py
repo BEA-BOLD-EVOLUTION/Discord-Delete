@@ -102,6 +102,25 @@ class Database:
         # asyncpg returns a status string like "UPDATE 1".
         return result.endswith("1")
 
+    async def delete_rule(self, channel_id: int) -> bool:
+        """Permanently remove a channel's rule. Returns True if one existed."""
+        result = await self.pool.execute(
+            "DELETE FROM channel_rules WHERE channel_id = $1", channel_id
+        )
+        return result.endswith("1")
+
+    async def delete_rules_for_guild(self, guild_id: int) -> int:
+        """Remove all rules for a guild (e.g. when the bot is kicked).
+
+        Archived messages are intentionally left untouched. Returns the count
+        of rules deleted.
+        """
+        result = await self.pool.execute(
+            "DELETE FROM channel_rules WHERE guild_id = $1", guild_id
+        )
+        # Status string looks like "DELETE 3".
+        return int(result.split()[-1]) if result else 0
+
     async def get_rule(self, channel_id: int) -> ChannelRule | None:
         row = await self.pool.fetchrow(
             "SELECT * FROM channel_rules WHERE channel_id = $1", channel_id
@@ -152,3 +171,15 @@ class Database:
             "SELECT count(*) FROM archived_messages WHERE channel_id = $1",
             channel_id,
         )
+
+    async def purge_old_archives(self, retention_days: int) -> int:
+        """Delete archived messages older than ``retention_days``.
+
+        Returns the number of rows removed.
+        """
+        result = await self.pool.execute(
+            "DELETE FROM archived_messages "
+            "WHERE archived_at < now() - make_interval(days => $1)",
+            retention_days,
+        )
+        return int(result.split()[-1]) if result else 0

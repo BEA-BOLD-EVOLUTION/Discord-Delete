@@ -32,3 +32,7 @@ CREATE TABLE IF NOT EXISTS archived_messages (
 
 CREATE INDEX IF NOT EXISTS idx_archived_channel_time
     ON archived_messages (channel_id, message_created_at);
+
+-- Supports the retention purge (delete rows older than N days).
+CREATE INDEX IF NOT EXISTS idx_archived_archived_at
+    ON archived_messages (archived_at);

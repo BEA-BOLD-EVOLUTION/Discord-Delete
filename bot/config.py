@@ -19,6 +19,7 @@ class Config:
     discord_token: str
     database_url: str
     sweep_interval_minutes: int
+    archive_retention_days: int
     dev_guild_id: int | None
 
     @classmethod
@@ -41,6 +42,16 @@ class Config:
         if interval < 1:
             raise ConfigError("SWEEP_INTERVAL_MINUTES must be at least 1.")
 
+        retention_raw = os.getenv("ARCHIVE_RETENTION_DAYS", "90").strip() or "90"
+        try:
+            retention = int(retention_raw)
+        except ValueError as exc:
+            raise ConfigError(
+                f"ARCHIVE_RETENTION_DAYS must be an integer, got {retention_raw!r}."
+            ) from exc
+        if retention < 1:
+            raise ConfigError("ARCHIVE_RETENTION_DAYS must be at least 1.")
+
         dev_guild_raw = os.getenv("DEV_GUILD_ID", "").strip()
         dev_guild_id: int | None
         if dev_guild_raw:
@@ -57,5 +68,6 @@ class Config:
             discord_token=token,
             database_url=database_url,
             sweep_interval_minutes=interval,
+            archive_retention_days=retention,
             dev_guild_id=dev_guild_id,
         )

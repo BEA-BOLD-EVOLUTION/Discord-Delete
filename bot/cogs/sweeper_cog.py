@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 
 import discord
@@ -33,37 +34,86 @@ class SweepResult:
 
 
 class SweeperCog(commands.Cog):
-    def __init__(self, bot: commands.Bot, db: Database, interval_minutes: int) -> None:
+    def __init__(
+        self,
+        bot: commands.Bot,
+        db: Database,
+        interval_minutes: int,
+        retention_days: int,
+    ) -> None:
         self.bot = bot
         self.db = db
+        self.retention_days = retention_days
         self.sweep_loop.change_interval(minutes=interval_minutes)
 
     async def cog_load(self) -> None:
         self.sweep_loop.start()
+        self.purge_loop.start()
 
     async def cog_unload(self) -> None:
         self.sweep_loop.cancel()
+        self.purge_loop.cancel()
 
-    # -- scheduled loop ---------------------------------------------------
+    # -- scheduled loops --------------------------------------------------
 
     @tasks.loop(minutes=60)
     async def sweep_loop(self) -> None:
         rules = await self.db.list_all_enabled_rules()
         if not rules:
             return
-        log.info("Scheduled sweep starting for %d channel(s).", len(rules))
-        total = SweepResult()
+
+        # Group by guild so one guild's failure is isolated from the others.
+        by_guild: dict[int, list[ChannelRule]] = defaultdict(list)
         for rule in rules:
-            total.add(await self._run_sweep(rule))
+            by_guild[rule.guild_id].append(rule)
+
+        log.info(
+            "Scheduled sweep starting: %d channel(s) across %d guild(s).",
+            len(rules),
+            len(by_guild),
+        )
+        grand_total = SweepResult()
+        for guild_id, guild_rules in by_guild.items():
+            guild_total = SweepResult()
+            try:
+                for rule in guild_rules:
+                    guild_total.add(await self._run_sweep(rule))
+            except Exception:  # noqa: BLE001 - never let one guild break the loop
+                log.exception("Unexpected error sweeping guild %d.", guild_id)
+                guild_total.errors += 1
+            log.info(
+                "Guild %d sweep: archived=%d deleted=%d errors=%d",
+                guild_id,
+                guild_total.archived,
+                guild_total.deleted,
+                guild_total.errors,
+            )
+            grand_total.add(guild_total)
+
         log.info(
             "Scheduled sweep done: archived=%d deleted=%d errors=%d",
-            total.archived,
-            total.deleted,
-            total.errors,
+            grand_total.archived,
+            grand_total.deleted,
+            grand_total.errors,
         )
 
     @sweep_loop.before_loop
-    async def _before_loop(self) -> None:
+    async def _before_sweep(self) -> None:
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=24)
+    async def purge_loop(self) -> None:
+        """Daily purge of archived messages past the retention window."""
+        purged = await self.db.purge_old_archives(self.retention_days)
+        if purged:
+            log.info(
+                "Retention purge: removed %d archived message(s) older than %d days.",
+                purged,
+                self.retention_days,
+            )
+
+    @purge_loop.before_loop
+    async def _before_purge(self) -> None:
         await self.bot.wait_until_ready()
 
     # -- core sweep -------------------------------------------------------
@@ -216,4 +266,11 @@ class SweeperCog(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:  # pragma: no cover - wired in main
-    await bot.add_cog(SweeperCog(bot, bot.db, bot.sweep_interval_minutes))
+    await bot.add_cog(
+        SweeperCog(
+            bot,
+            bot.db,
+            bot.sweep_interval_minutes,
+            bot.archive_retention_days,
+        )
+    )

@@ -140,6 +140,22 @@ class ConfigCog(commands.Cog):
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    # -- lifecycle cleanup -----------------------------------------------
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        """When kicked from a guild, drop its rules but keep its archive."""
+        removed = await self.db.delete_rules_for_guild(guild.id)
+        log.info("Removed from guild %d; deleted %d rule(s).", guild.id, removed)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(
+        self, channel: discord.abc.GuildChannel
+    ) -> None:
+        """Clean up a rule when its channel is deleted for good."""
+        if await self.db.delete_rule(channel.id):
+            log.info("Channel %d deleted; removed its aging rule.", channel.id)
+
     async def cog_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ) -> None:
