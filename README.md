@@ -1,0 +1,121 @@
+# Discord Message Aging Bot
+
+A Discord bot that manages channels by **aging out** messages — either
+**archiving them to a database and then deleting**, or **just deleting** — on a
+per-channel basis. Aging runs both on an **automatic schedule** and **on demand**
+via admin slash commands.
+
+## Features
+
+- **Per-channel rules.** Each channel gets its own maximum message age and mode:
+  - `archive_delete` — copy the message (content, attachments, embeds, author,
+    timestamps) into PostgreSQL, then delete it.
+  - `delete` — delete the message outright, no copy kept.
+- **Automatic sweeps.** A background task scans every enabled channel on an
+  interval (default hourly) and ages out anything past its threshold.
+- **Manual sweeps.** Admins can run `/sweep` to process a channel immediately.
+- **Pinned-message protection** (on by default, configurable per channel).
+- **Durable archive** in PostgreSQL for later querying.
+
+## Slash commands
+
+All commands require the **Manage Messages** permission.
+
+| Command | Description |
+| --- | --- |
+| `/aging set channel:<#channel> max_age:<duration> mode:<archive_delete\|delete> [skip_pinned:<bool>]` | Create or update a channel's rule. |
+| `/aging disable channel:<#channel>` | Stop aging a channel (keeps its archive). |
+| `/aging status [channel:<#channel>]` | Show a channel's current rule. |
+| `/aging list` | List all rules in the server. |
+| `/sweep [channel:<#channel>]` | Run the sweep now — one channel, or all configured channels. |
+
+**Durations** accept compact forms: `30d`, `12h`, `45m`, `90s`, `2w`, or
+combinations like `1d12h`. A bare number is seconds.
+
+## Requirements
+
+- Python 3.10+
+- A PostgreSQL database
+- A Discord application/bot token
+
+### Discord setup
+
+1. Create an application at <https://discord.com/developers/applications>.
+2. Under **Bot**, enable the **Message Content Intent** (required to read and
+   archive message bodies). Copy the bot token.
+3. Invite the bot with the **`bot`** and **`applications.commands`** scopes and
+   the **Manage Messages** + **Read Message History** permissions. A ready-made
+   invite URL looks like:
+   ```
+   https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot%20applications.commands&permissions=8192
+   ```
+   (`8192` = Manage Messages; add `65536` for Read Message History → `73728`.)
+
+## Configuration
+
+Copy `.env.example` to `.env` and fill in:
+
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `DISCORD_TOKEN` | ✅ | — | Bot token. |
+| `DATABASE_URL` | ✅ | — | e.g. `postgresql://user:pass@host:5432/discorddelete`. |
+| `SWEEP_INTERVAL_MINUTES` | | `60` | How often the automatic sweep runs. |
+| `DEV_GUILD_ID` | | — | Sync commands to one guild instantly during dev. Leave blank for global sync. |
+
+## Running
+
+### With Docker (bot + Postgres together)
+
+```bash
+cp .env.example .env      # set DISCORD_TOKEN (DATABASE_URL is provided by compose)
+docker compose up --build
+```
+
+This starts PostgreSQL and the bot; the database schema is created automatically
+on first boot.
+
+### Locally
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env      # fill in DISCORD_TOKEN and DATABASE_URL
+python -m bot.main
+```
+
+> **Hosting:** the bot just needs a long-running Python process and a Postgres
+> URL. That can be a VPS, a home server/Raspberry Pi via `docker compose`, or a
+> managed host (Railway, Fly.io, Render). None of these are required — pick
+> whatever you already have.
+
+## Testing
+
+Unit tests cover the duration parser and the archive serializer — no database or
+network needed:
+
+```bash
+pip install -r requirements.txt
+pytest
+```
+
+## How it works
+
+- `bot/main.py` — sets up intents (incl. message content), connects the DB pool,
+  loads cogs, and syncs slash commands.
+- `bot/db.py` — asyncpg pool, idempotent schema bootstrap (`migrations/001_init.sql`),
+  and typed query helpers.
+- `bot/cogs/config_cog.py` — the `/aging` command group.
+- `bot/cogs/sweeper_cog.py` — the scheduled `tasks.loop` sweep and `/sweep`.
+- `bot/archive.py` / `bot/duration.py` — message serialization and duration parsing.
+
+### A note on the 14-day rule
+
+Discord's bulk-delete API only works on messages **younger than 14 days**.
+Anything older is deleted one-by-one (slower, rate-limited). For channels you
+want fully cleared on the first run, expect older messages to take longer.
+
+## Roadmap (not in v1)
+
+- Restoring archived messages back into Discord.
+- A web dashboard / search UI over the archive.
+- Multi-instance coordination (v1 assumes a single bot instance).
