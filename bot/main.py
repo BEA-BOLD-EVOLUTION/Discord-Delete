@@ -16,14 +16,17 @@ log = logging.getLogger(__name__)
 COGS = (
     "bot.cogs.config_cog",
     "bot.cogs.sweeper_cog",
+    "bot.cogs.logs_cog",
 )
 
 
 class AgingBot(commands.Bot):
     def __init__(self, config: Config) -> None:
         intents = discord.Intents.default()
-        # Needed to read message bodies for archiving.
-        intents.message_content = True
+        # Needed to read message bodies for archiving. Requires the Message
+        # Content Intent to be enabled in the Developer Portal; operators who
+        # only use delete-mode can turn this off via ENABLE_MESSAGE_CONTENT.
+        intents.message_content = config.enable_message_content
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.config = config
         self.sweep_interval_minutes = config.sweep_interval_minutes
@@ -61,8 +64,18 @@ async def _amain() -> None:
     )
     config = Config.from_env()
     bot = AgingBot(config)
-    async with bot:
-        await bot.start(config.discord_token)
+    try:
+        async with bot:
+            await bot.start(config.discord_token)
+    except discord.PrivilegedIntentsRequired:
+        log.error(
+            "Message Content Intent is not enabled for this bot. Enable it at "
+            "https://discord.com/developers/applications -> your app -> Bot -> "
+            "Privileged Gateway Intents -> Message Content Intent, then redeploy. "
+            "Alternatively, set ENABLE_MESSAGE_CONTENT=false to run in "
+            "delete-only mode (archived messages will not include text content)."
+        )
+        raise SystemExit(1)
 
 
 def main() -> None:

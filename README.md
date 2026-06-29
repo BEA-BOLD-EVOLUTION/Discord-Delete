@@ -23,7 +23,7 @@ All commands require the **Manage Messages** permission.
 
 | Command | Description |
 | --- | --- |
-| `/aging set channel:<#channel> max_age:<duration> mode:<archive_delete\|delete> [skip_pinned:<bool>]` | Create or update a channel's rule. |
+| `/aging set channel:<#channel> max_age:<duration> mode:<archive_delete\|delete> [run_every:<duration>] [skip_pinned:<bool>]` | Create or update a channel's rule. |
 | `/aging disable channel:<#channel>` | Stop aging a channel (keeps its archive). |
 | `/aging status [channel:<#channel>]` | Show a channel's current rule. |
 | `/aging list` | List all rules in the server. |
@@ -31,6 +31,22 @@ All commands require the **Manage Messages** permission.
 
 **Durations** accept compact forms: `30d`, `12h`, `45m`, `90s`, `2w`, or
 combinations like `1d12h`. A bare number is seconds.
+
+### Per-channel schedule
+
+Each channel has two independent settings:
+
+- **`max_age`** — how old a message must be before it qualifies for cleanup.
+- **`run_every`** — how often that channel's cleanup actually runs (default
+  **`1d`**). Set it to `3d`, `12h`, `1w`, etc. per channel.
+
+The bot wakes up every `SWEEP_INTERVAL_MINUTES` (the global "tick", default 60),
+but a given channel is only swept once its own `run_every` has elapsed since its
+last run — so `run_every` is effectively rounded up to the tick. Running `/sweep`
+manually processes the channel immediately and resets its cadence clock.
+
+Example — clear messages older than 7 days, but only run the pass once a day:
+`/aging set channel:#general max_age:7d mode:delete run_every:1d`
 
 ## Multi-server (public bot)
 
@@ -66,7 +82,10 @@ archive bounded and applies uniformly to every server.
 
 1. Create an application at <https://discord.com/developers/applications>.
 2. Under **Bot**, enable the **Message Content Intent** (required to read and
-   archive message bodies). Copy the bot token.
+   archive message bodies). Copy the bot token. If you only use `delete` mode and
+   don't want this privileged intent, set `ENABLE_MESSAGE_CONTENT=false` instead
+   (archived text will then be empty). Without either, the bot exits on startup
+   with a clear message telling you to enable the intent.
 3. Invite the bot with the **`bot`** and **`applications.commands`** scopes and
    the **Manage Messages** + **Read Message History** permissions
    (`8192 + 65536 = 73728`). Ready-made invite link for this application:
@@ -85,6 +104,7 @@ Copy `.env.example` to `.env` and fill in:
 | `DATABASE_URL` | ✅ | — | e.g. `postgresql://user:pass@host:5432/discorddelete`. |
 | `SWEEP_INTERVAL_MINUTES` | | `60` | How often the automatic sweep runs. |
 | `ARCHIVE_RETENTION_DAYS` | | `90` | Archived messages older than this are purged daily. |
+| `ENABLE_MESSAGE_CONTENT` | | `true` | Request the Message Content Intent (needed to archive text). Set `false` for delete-only mode without the privileged intent. |
 | `DEV_GUILD_ID` | | — | Sync commands to one guild instantly during dev. Leave blank for global sync. |
 
 ## Running
