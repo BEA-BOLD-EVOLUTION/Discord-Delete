@@ -1,0 +1,11 @@
+# Railway build/deploy config. Railway auto-detects the Dockerfile; this pins
+# that choice and adds a restart policy. The bot is a background worker — it
+# serves no HTTP port, so no domain or health check is needed.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

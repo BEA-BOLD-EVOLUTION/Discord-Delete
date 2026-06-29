@@ -83,10 +83,26 @@ cp .env.example .env      # fill in DISCORD_TOKEN and DATABASE_URL
 python -m bot.main
 ```
 
-> **Hosting:** the bot just needs a long-running Python process and a Postgres
-> URL. That can be a VPS, a home server/Raspberry Pi via `docker compose`, or a
-> managed host (Railway, Fly.io, Render). None of these are required — pick
-> whatever you already have.
+### On Railway
+
+The repo is Railway-ready: `railway.toml` pins the Docker build and a restart
+policy, and the bot runs as a background worker (no HTTP port or domain needed).
+
+1. Create a project from this repo (**New Project → Deploy from GitHub repo**).
+   Railway builds the `Dockerfile` automatically.
+2. In that project, **add a database → PostgreSQL**. This creates a `Postgres`
+   service exposing a `DATABASE_URL`.
+3. Open the **bot service → Variables** and set:
+   - `DISCORD_TOKEN` = your bot token
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (reference the Postgres service
+     so they connect over Railway's private network)
+   - *(optional)* `SWEEP_INTERVAL_MINUTES`, `DEV_GUILD_ID`
+4. Deploy. The schema is created on first boot; watch the deploy logs for
+   `Logged in as ...`.
+
+> **Other hosts:** the bot just needs a long-running Python process and a Postgres
+> URL — a VPS, a home server/Raspberry Pi via `docker compose`, or Fly.io/Render
+> all work the same way. Railway is just one option.
 
 ## Testing
 
