@@ -91,6 +91,14 @@ def test_build_panel_embed_incomplete_has_footer():
     assert embed.footer.text is not None
 
 
+def test_build_panel_embed_includes_instructions():
+    # The panel must explain itself so it's usable without external docs.
+    desc = build_panel_embed(PanelState()).description
+    assert "How to use" in desc
+    assert "Pick a channel" in desc
+    assert "Custom" in desc  # mentions the custom-duration option
+
+
 @pytest.mark.parametrize("text", ["45m", "2d", "1w3d"])
 def test_custom_duration_parses(text):
     assert parse_duration(text) > 0

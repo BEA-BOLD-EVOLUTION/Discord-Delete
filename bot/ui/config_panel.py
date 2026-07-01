@@ -52,6 +52,19 @@ DEFAULT_MODE = "delete"
 CUSTOM_VALUE = "custom"
 PANEL_TIMEOUT = 180
 
+# Step-by-step instructions shown inside the panel so it explains itself.
+HOW_TO = (
+    "**How to use**\n"
+    "1️⃣ **Pick a channel** in the top menu.\n"
+    "2️⃣ Choose an **action** — delete, or archive then delete.\n"
+    "3️⃣ Set **how old** a message must be before it's removed.\n"
+    "4️⃣ Set **how often** the cleanup runs.\n"
+    "5️⃣ Optionally toggle **Skip pinned**.\n"
+    "6️⃣ Press **Save** ✅   ·   **Disable rule** 🛑 turns a channel off.\n"
+    "\n_Tip: pick **Custom…** in any menu to type an exact time like `36h` or "
+    "`1w3d`. Only you can use this panel, and it closes after a few minutes._"
+)
+
 
 @dataclass
 class PanelState:
@@ -83,13 +96,14 @@ class PanelState:
 def build_panel_embed(state: PanelState) -> discord.Embed:
     """Render the live summary embed for the current selections."""
     complete = state.is_complete()
+    intro = (
+        "✏️ **Editing this channel's existing rule.** Adjust anything below."
+        if state.existing
+        else "Set up automatic message cleanup for a channel."
+    )
     embed = discord.Embed(
         title="🧹 Channel cleanup setup",
-        description=(
-            "Editing this channel's existing rule — adjust and press **Save**."
-            if state.existing
-            else "Pick a channel and options below, then press **Save**."
-        ),
+        description=f"{intro}\n\n{HOW_TO}",
         color=discord.Color.blurple() if complete else discord.Color.greyple(),
     )
     embed.add_field(
