@@ -10,13 +10,14 @@ from discord.ext import commands
 
 from ..db import Database
 from ..duration import DurationError, humanize_duration, parse_duration
+from ..ui.config_panel import (
+    MODE_LABELS,
+    ConfigPanelView,
+    PanelState,
+    build_panel_embed,
+)
 
 log = logging.getLogger(__name__)
-
-MODE_LABELS = {
-    "archive_delete": "Archive then delete",
-    "delete": "Delete only",
-}
 
 
 class ConfigCog(commands.Cog):
@@ -162,6 +163,40 @@ class ConfigCog(commands.Cog):
                 inline=False,
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # -- interactive setup panel -----------------------------------------
+
+    @app_commands.command(
+        name="setup",
+        description="Open an interactive panel to configure a channel's cleanup.",
+    )
+    @app_commands.describe(channel="Optionally preselect a channel to edit.")
+    @app_commands.default_permissions(manage_messages=True)
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_messages=True)
+    async def setup_panel(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel | None = None,
+    ) -> None:
+        state = PanelState()
+        if channel is not None:
+            state.channel_id = channel.id
+            existing = await self.db.get_rule(channel.id)
+            if existing is not None:
+                state.max_age_seconds = existing.max_age_seconds
+                state.mode = existing.mode
+                state.run_every_seconds = existing.run_every_seconds
+                state.skip_pinned = existing.skip_pinned
+                state.existing = True
+
+        view = ConfigPanelView(
+            self.db, interaction.guild_id, interaction.user.id, state
+        )
+        await interaction.response.send_message(
+            embed=build_panel_embed(state), view=view, ephemeral=True
+        )
+        view.message = await interaction.original_response()
 
     # -- lifecycle cleanup -----------------------------------------------
 
