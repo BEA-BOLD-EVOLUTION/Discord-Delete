@@ -62,6 +62,11 @@ async def _amain() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
     )
+    # discord.py logs every 429 rate-limit as a WARNING. These are expected and
+    # handled automatically (it waits and retries), and flood the logs when
+    # deleting a large backlog of >14-day-old messages one at a time. Keep only
+    # real HTTP errors from that logger.
+    logging.getLogger("discord.http").setLevel(logging.ERROR)
     config = Config.from_env()
     bot = AgingBot(config)
     try:
