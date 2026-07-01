@@ -44,6 +44,9 @@ class SweeperCog(commands.Cog):
         self.bot = bot
         self.db = db
         self.retention_days = retention_days
+        # Channels currently being swept — prevents a manual /sweep from
+        # colliding with the scheduled sweep (double deletes / 404 churn).
+        self._active_channels: set[int] = set()
         self.sweep_loop.change_interval(minutes=interval_minutes)
 
     async def cog_load(self) -> None:
@@ -147,61 +150,96 @@ class SweeperCog(commands.Cog):
     async def _run_sweep(self, rule: ChannelRule) -> SweepResult:
         """Age out messages for a single channel rule. Never raises."""
         result = SweepResult()
-        channel = self.bot.get_channel(rule.channel_id)
-        if channel is None:
-            try:
-                channel = await self.bot.fetch_channel(rule.channel_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                log.warning("Cannot access channel %d: %s", rule.channel_id, exc)
-                result.errors += 1
+
+        # Skip if this channel is already being swept (e.g. the scheduled sweep
+        # is mid-run and a manual /sweep arrives) — avoids double deletes.
+        if rule.channel_id in self._active_channels:
+            log.info(
+                "Channel %d is already being swept; skipping this run.",
+                rule.channel_id,
+            )
+            return result
+        self._active_channels.add(rule.channel_id)
+        try:
+            channel = self.bot.get_channel(rule.channel_id)
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(rule.channel_id)
+                except (
+                    discord.NotFound,
+                    discord.Forbidden,
+                    discord.HTTPException,
+                ) as exc:
+                    log.warning("Cannot access channel %d: %s", rule.channel_id, exc)
+                    result.errors += 1
+                    return result
+
+            if not isinstance(channel, (discord.TextChannel, discord.Thread)):
                 return result
 
-        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            return result
+            now = dt.datetime.now(dt.timezone.utc)
+            cutoff = now - dt.timedelta(seconds=rule.max_age_seconds)
+            recent_batch: list[discord.Message] = []
 
-        now = dt.datetime.now(dt.timezone.utc)
-        cutoff = now - dt.timedelta(seconds=rule.max_age_seconds)
-        recent_batch: list[discord.Message] = []
-
-        try:
-            async for message in channel.history(
-                before=cutoff, limit=None, oldest_first=True
-            ):
-                if rule.skip_pinned and message.pinned:
-                    continue
-
-                if rule.mode == "archive_delete":
-                    try:
-                        await self.db.archive_message(archive.serialize(message))
-                        result.archived += 1
-                    except Exception:  # noqa: BLE001 - don't delete if archive failed
-                        log.exception(
-                            "Failed to archive message %d; skipping delete.",
-                            message.id,
-                        )
-                        result.errors += 1
+            try:
+                async for message in channel.history(
+                    before=cutoff, limit=None, oldest_first=True
+                ):
+                    if rule.skip_pinned and message.pinned:
                         continue
 
-                age = now - message.created_at
-                if age < BULK_DELETE_MAX_AGE:
-                    recent_batch.append(message)
-                    if len(recent_batch) >= BULK_DELETE_BATCH:
-                        result.deleted += await self._bulk_delete(channel, recent_batch)
-                        recent_batch = []
-                else:
-                    if await self._delete_one(message):
-                        result.deleted += 1
-                    else:
-                        result.errors += 1
+                    if rule.mode == "archive_delete":
+                        try:
+                            await self.db.archive_message(archive.serialize(message))
+                            result.archived += 1
+                        except Exception:  # noqa: BLE001 - don't delete if archive failed
+                            log.exception(
+                                "Failed to archive message %d; skipping delete.",
+                                message.id,
+                            )
+                            result.errors += 1
+                            continue
 
-            if recent_batch:
-                result.deleted += await self._bulk_delete(channel, recent_batch)
-        except discord.Forbidden:
-            log.warning("Missing permissions to read history in %d.", rule.channel_id)
-            result.errors += 1
-        except discord.HTTPException as exc:
-            log.warning("HTTP error sweeping channel %d: %s", rule.channel_id, exc)
-            result.errors += 1
+                    age = now - message.created_at
+                    if age < BULK_DELETE_MAX_AGE:
+                        recent_batch.append(message)
+                        if len(recent_batch) >= BULK_DELETE_BATCH:
+                            result.deleted += await self._bulk_delete(
+                                channel, recent_batch
+                            )
+                            recent_batch = []
+                    else:
+                        outcome = await self._delete_one(message)
+                        if outcome is True:
+                            result.deleted += 1
+                        elif outcome is False:
+                            result.errors += 1
+                        # outcome is None -> already gone; not counted.
+
+                    # Progress log for large backlogs (old messages delete slowly
+                    # one-by-one under Discord's rate limits).
+                    processed = result.deleted + result.errors
+                    if processed and processed % 250 == 0:
+                        log.info(
+                            "Channel %d sweep in progress: %d deleted so far.",
+                            rule.channel_id,
+                            result.deleted,
+                        )
+
+                if recent_batch:
+                    result.deleted += await self._bulk_delete(channel, recent_batch)
+            except discord.Forbidden:
+                log.warning(
+                    "Missing permissions to read history in %d.", rule.channel_id
+                )
+                result.errors += 1
+            except discord.HTTPException as exc:
+                log.warning(
+                    "HTTP error sweeping channel %d: %s", rule.channel_id, exc
+                )
+                result.errors += 1
+        finally:
+            self._active_channels.discard(rule.channel_id)
 
         return result
 
@@ -219,10 +257,18 @@ class SweeperCog(commands.Cog):
                     deleted += 1
             return deleted
 
-    async def _delete_one(self, message: discord.Message) -> bool:
+    async def _delete_one(self, message: discord.Message) -> bool | None:
+        """Delete one message.
+
+        Returns ``True`` if deleted, ``None`` if it was already gone (a 404 —
+        common when a rate-limited delete actually succeeded server-side and the
+        retry misses), and ``False`` on a real failure.
+        """
         try:
             await message.delete()
             return True
+        except discord.NotFound:
+            return None
         except discord.HTTPException as exc:
             log.warning("Failed to delete message %d: %s", message.id, exc)
             return False
