@@ -17,12 +17,29 @@ via admin slash commands.
 - **Pinned-message protection** (on by default, configurable per channel).
 - **Durable archive** in PostgreSQL for later querying.
 
-## Slash commands
+## Quick setup (recommended)
 
-All commands require the **Manage Messages** permission.
+Run **`/setup`** for a point-and-click panel — no need to remember arguments:
+
+1. `/setup` opens a private panel with a **channel picker** and dropdowns for the
+   **action** (delete / archive+delete), **max age**, and **how often** it runs,
+   plus a **Skip pinned** toggle.
+2. Pick your options (each dropdown has presets, or choose **Custom…** to type an
+   exact duration), then press **Save**. **Disable rule** turns a channel off.
+3. Selecting a channel that's already configured pre-fills its current settings so
+   you can edit them.
+
+The panel is only usable by the admin who opened it and closes itself after a few
+minutes of inactivity.
+
+## Slash commands (advanced)
+
+Prefer typing, or scripting config? The slash commands do the same thing. All
+require the **Manage Messages** permission.
 
 | Command | Description |
 | --- | --- |
+| `/setup [channel:<#channel>]` | Open the interactive configuration panel. |
 | `/aging set channel:<#channel> max_age:<duration> mode:<archive_delete\|delete> [run_every:<duration>] [skip_pinned:<bool>]` | Create or update a channel's rule. |
 | `/aging disable channel:<#channel>` | Stop aging a channel (keeps its archive). |
 | `/aging status [channel:<#channel>]` | Show a channel's current rule. |
